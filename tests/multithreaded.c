@@ -1,5 +1,5 @@
 #include "srb.h"
-#include <inttypes.h>
+// #include <inttypes.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,8 +18,9 @@ int reader(void *arg) {
   size_t i;
   do {
     // printf("reader %" PRIuPTR ": now reading\n", r);
-    while (srb_try_pop_one(&q, &i))
-      ;
+    while (srb_try_pop_one(&q, &i)) {
+      thrd_yield();
+    }
     // printf("reader %" PRIuPTR ": read %zu\n", r, i);
     assert(last_i <= i);
     thrd_yield();
@@ -33,8 +34,9 @@ int writer(void *arg) {
   while (i < iterations) {
     i = atomic_fetch_add(&counter, 1);
     // printf("writer %" PRIuPTR ": now writing %zu\n", w, i);
-    while (srb_try_push_one(&q, i))
-      ;
+    while (srb_try_push_one(&q, i)) {
+      thrd_yield();
+    }
     // printf("writer %" PRIuPTR ": finished writing\n", w);
     thrd_yield();
   }
