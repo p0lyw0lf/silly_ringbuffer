@@ -91,7 +91,7 @@
  */
 #define SRB_TRY(statement)                                                     \
   do {                                                                         \
-    int srb_internal_err = statement;                                          \
+    int srb_internal_err = (statement);                                        \
     if (srb_internal_err != 0)                                                 \
       return srb_internal_err;                                                 \
   } while (0)
@@ -103,7 +103,7 @@
  */
 #define SRB_UNWRAP(statement)                                                  \
   do {                                                                         \
-    int srb_internal_err = statement;                                          \
+    int srb_internal_err = (statement);                                        \
     assert(srb_internal_err == 0);                                             \
   } while (0)
 
@@ -115,13 +115,13 @@
  * @param N the amount of spaces to reserve
  */
 #define SRB_INIT(VAR, N)                                                       \
-  VAR.buffer.data = malloc(sizeof(*(VAR.buffer.data)) * N);                    \
-  assert(VAR.buffer.data != NULL);                                             \
-  VAR.buffer.size = N;                                                         \
-  atomic_init(&VAR.head_valid, 0);                                             \
-  atomic_init(&VAR.head_commit, 0);                                            \
-  atomic_init(&VAR.tail_valid, 0);                                             \
-  atomic_init(&VAR.tail_commit, 0);
+  (VAR).buffer.data = malloc(sizeof(*((VAR).buffer.data)) * N);                \
+  assert((VAR).buffer.data != NULL);                                           \
+  (VAR).buffer.size = N;                                                       \
+  atomic_init(&(VAR).head_valid, 0);                                           \
+  atomic_init(&(VAR).head_commit, 0);                                          \
+  atomic_init(&(VAR).tail_valid, 0);                                           \
+  atomic_init(&(VAR).tail_commit, 0);
 
 /**
  * @brief Frees the internal data for the ringbuffer `VAR`
@@ -190,13 +190,19 @@
     do {                                                                       \
       tail = atomic_load(&s->tail_commit);                                     \
       size_t head = atomic_load(&s->head_valid);                               \
-      size_t remaining = srb_remaining(head, tail, s->buffer.size);            \
       SRB_TRY(                                                                 \
           srb_wrapping_push(&next_tail, head, tail, s->buffer.size, v.size));  \
+      /* NOTE: this suffers from ABA: by the time the above atomics have       \
+       * completed, s->tail_commit could have wrapped around and s->head_valid \
+       * could be in a place with less remaining space than when we did the    \
+       * initial check. This might be solvable by using a "total number of     \
+       * committed spaces" counter, need to think about it more tho hm.        \
+       */                                                                      \
     } while (                                                                  \
         !atomic_compare_exchange_weak(&s->tail_commit, &tail, next_tail));     \
                                                                                \
     /* TODO: checked mul */                                                    \
+    /* NOTE: this is flat-out wrong, should be two memcpy */                   \
     memcpy(&s->buffer.data[tail], v.data, v.size * sizeof(ELEM_TYPE));         \
     /* NOTE: This isn't an atomic_add, because of the following scenario:      \
      * 1. push size 1000 queued (tail_commit = 1000)                           \
@@ -277,10 +283,17 @@
       size_t tail = atomic_load(&s->tail_valid);                               \
       SRB_TRY(                                                                 \
           srb_wrapping_pop(&next_head, head, tail, s->buffer.size, v.size));   \
+      /* NOTE: this suffers from ABA: by the time the above atomics have       \
+       * completed, s->head_commit could have wrapped around and s->tail_valid \
+       * could be in a place with less filled space than when we did the       \
+       * initial check. This might be solvable by using a "size - pop          \
+       * committed spaces" counter, need to think about it more tho hm.        \
+       */                                                                      \
     } while (                                                                  \
         !atomic_compare_exchange_weak(&s->head_commit, &head, next_head));     \
                                                                                \
     /* TODO: checked mul */                                                    \
+    /* NOTE: this is flat-out wrong, should be two memcpy */                   \
     memcpy(v.data, &s->buffer.data[head], v.size * sizeof(ELEM_TYPE));         \
     /* NOTE: This isn't an atomic_add, because of the following scenario:      \
      * 1. pop size 1000 queued (head_commit = 1000)                            \
