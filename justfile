@@ -1,4 +1,13 @@
 set shell := ["powershell"]
 
-cc:
-  clang test.c -o test.exe
+c: configure
+configure:
+  cmake -S . -B . -G Ninja
+
+b: build
+build:
+  cmake --build .
+
+t: test
+test:
+  ctest

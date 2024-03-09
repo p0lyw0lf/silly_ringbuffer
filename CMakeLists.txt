@@ -1,14 +1,25 @@
 cmake_minimum_required(VERSION 3.15)
 
 project(srb)
+include(CTest)
 
-add_executable(srb_test
-  test.c
-  srb.h
-)
-set_property(TARGET srb_test PROPERTY C_STANDARD 17)
-set_property(TARGET srb_test PROPERTY EXPORT_COMPILE_COMMANDS 1)
+macro(make_test test_name)
+  add_executable(${test_name}
+    srb.h
+    "tests/${test_name}.c"
+  )
+  set_property(TARGET ${test_name} PROPERTY C_STANDARD 17)
+  set_property(TARGET ${test_name} PROPERTY EXPORT_COMPILE_COMMANDS 1)
+  target_include_directories(${test_name} BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-if (MSVC)
-  target_compile_options(srb_test PRIVATE "/experimental:c11atomics")
+  if (MSVC)
+    target_compile_options(${test_name} PRIVATE "/experimental:c11atomics")
+  endif()
+
+  add_test(NAME ${test_name} COMMAND ${test_name})
+endmacro()
+
+if (BUILD_TESTING)
+  make_test(simple_test)
+  make_test(char_test)
 endif()
