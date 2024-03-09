@@ -91,10 +91,10 @@
  */
 #define SRB_TRY(statement)                                                     \
   do {                                                                         \
-    int err = statement;                                                       \
-    if (err != 0)                                                              \
-      return err;                                                              \
-  } while (1 == 0)
+    int srb_internal_err = statement;                                          \
+    if (srb_internal_err != 0)                                                 \
+      return srb_internal_err;                                                 \
+  } while (0)
 
 /**
  * @brief Panics if a statement is nonzero
@@ -103,9 +103,9 @@
  */
 #define SRB_UNWRAP(statement)                                                  \
   do {                                                                         \
-    int err = statement;                                                       \
-    assert(err == 0);                                                          \
-  } while (1 == 0)
+    int srb_internal_err = statement;                                          \
+    assert(srb_internal_err == 0);                                             \
+  } while (0)
 
 /**
  * @brief Initializes a `VAR` to be a ringbuffer of `TYPE`, with `N` spaces
@@ -114,8 +114,7 @@
  * @param VAR the variable to initialize
  * @param N the amount of spaces to reserve
  */
-#define SRB_INIT(TYPE, VAR, N)                                                 \
-  TYPE VAR;                                                                    \
+#define SRB_INIT(VAR, N)                                                       \
   VAR.buffer.data = malloc(sizeof(*(VAR.buffer.data)) * N);                    \
   assert(VAR.buffer.data != NULL);                                             \
   VAR.buffer.size = N;                                                         \

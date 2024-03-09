@@ -4,8 +4,8 @@ SRB_DECL(, srb, int);
 SRB_DEF(, srb, int);
 
 int main() {
-  // Default-initialization is fine.
-  SRB_INIT(srb, q, 6);
+  srb q;
+  SRB_INIT(q, 6);
   // Can push single elements
   assert(srb_try_push_one(&q, 1) == 0);
   assert(srb_try_push_one(&q, 2) == 0);

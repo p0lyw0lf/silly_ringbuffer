@@ -15,7 +15,8 @@ srb_char_slice srb_string(size_t len) {
 }
 
 int main() {
-  SRB_INIT(charq, c, 8);
+  charq c;
+  SRB_INIT(c, 8);
   assert(charq_try_push(&c, srb_string_view("foo")) == 0);
   assert(charq_try_push(&c, srb_string_view("bar!")) == 0);
   assert(charq_try_push_one(&c, '?') != 0);
