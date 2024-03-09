@@ -19,9 +19,9 @@ int main() {
   assert(vs[0] == 2);
   assert(vs[1] == 3);
   assert(vs[2] == 4);
-  assert(!srb_empty(&q));
   assert(srb_pop_one(&q) == 5);
-  assert(srb_empty(&q));
+  int x;
+  assert(srb_try_pop_one(&q, &x) != 0);
 
   // Can also initialize with a given buffer size ahead of time.
   /*

@@ -2,6 +2,7 @@
 #define SILLY_RINGBUFFER_H
 
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,6 +31,21 @@
  *
  * Also declares all the functions, prefixed with `TYPE`, to go along with it.
  *
+ * Structure:
+ *
+ * head_valid --(A)-- head_commit --(B)-- tail_valid --(C)-- tail_commit --(D)--
+ *
+ * Pushes and pops are done in two stages: first, the "committed" region is
+ * grown, representing a claim on a region of memory, and then the "valid"
+ * region is grown, representing a finished read or write. Both steps can be
+ * done with a simple atomic addition.
+ *
+ * Region descriptions:
+ * (A): in the process of being read
+ * (B): stable stored elements
+ * (C): in the process of being written
+ * (D): stable empty elements
+ *
  * @param TYPE the type name you wish the newly-generated structure to have.
  * @param ELEM_TYPE the type of elements to be stored in the ringbuffer
  **/
@@ -39,10 +55,14 @@
   typedef struct {                                                             \
     /** @brief Stores all the elements */                                      \
     ELEM_TYPE##_slice buffer;                                                  \
+    /** @brief Index of the next element that has yet to be popped */          \
+    atomic_size_t head_valid;                                                  \
     /** @brief Index of the next element that can be popped */                 \
-    size_t head;                                                               \
+    atomic_size_t head_commit;                                                 \
     /** @brief Index of the next available slot to place an element */         \
-    size_t tail;                                                               \
+    atomic_size_t tail_valid;                                                  \
+    /** @brief Index of the next available slot to place an element */         \
+    atomic_size_t tail_commit;                                                 \
   } TYPE;
 
 SRB_DECL(srb, int);
@@ -73,8 +93,10 @@ SRB_DECL(srb, int);
   VAR.buffer.data = malloc(sizeof(*(VAR.buffer.data)) * N);                    \
   assert(VAR.buffer.data != NULL);                                             \
   VAR.buffer.size = N;                                                         \
-  VAR.head = 0;                                                                \
-  VAR.tail = 0;
+  atomic_init(&VAR.head_valid, 0);                                             \
+  atomic_init(&VAR.head_commit, 0);                                            \
+  atomic_init(&VAR.tail_valid, 0);                                             \
+  atomic_init(&VAR.tail_commit, 0);
 
 /**
  * @brief Frees the internal data for the ringbuffer `VAR`
@@ -89,40 +111,63 @@ SRB_DECL(srb, int);
     (VAR).buffer.data = NULL;                                                  \
   } while (1 == 0)
 
-int srb_empty(srb *s) { return s->head == s->tail; }
-
 /**
  * @returns the number of available slots left to place elements in.
  */
-size_t srb_remaining(srb *s) {
-  if (s->head > s->tail) {
+size_t srb_remaining(size_t head, size_t tail, size_t size) {
+  if (head > tail) {
     // Gap is in the middle of the array.
     // 11111100011
     //       t  h
-    return s->head - s->tail;
+    return head - tail;
   } else {
     // Gaps are at either side of the array.
     // 00111100000
     //   h   t
-    return s->head + (s->buffer.size - s->tail);
+    return head + (size - tail);
   }
 }
 
-int srb_try_push(srb *s, int_slice v) {
-  if (srb_remaining(s) < v.size) {
+/**
+ * @brief Effectively does `*out = tail + n`, wrapping around on size, and
+ * returning an error if it cannot
+ */
+int srb_wrapping_push(size_t *out, size_t head, size_t tail, size_t size,
+                      size_t n) {
+  if (srb_remaining(head, tail, size) < n) {
     return 1;
   }
 
   // TODO: wrapping_add
-  size_t next_tail = s->tail + v.size;
-  if (next_tail >= s->buffer.size) {
+  size_t next_tail = tail + n;
+  if (next_tail >= size) {
     // TODO: wrapping_sub
-    next_tail -= s->buffer.size;
+    next_tail -= size;
   }
 
+  *out = next_tail;
+  return 0;
+}
+
+int srb_try_push(srb *s, int_slice v) {
+  size_t next_tail;
+  size_t tail;
+  do {
+    tail = atomic_load(&s->tail_commit);
+    size_t head = atomic_load(&s->head_valid);
+    TRY(srb_wrapping_push(&next_tail, head, tail, s->buffer.size, v.size));
+  } while (!atomic_compare_exchange_weak(&s->tail_commit, &tail, next_tail));
+
   // TODO: checked mul
-  memcpy(&s->buffer.data[s->tail], v.data, v.size * sizeof(int));
-  s->tail = next_tail;
+  memcpy(&s->buffer.data[tail], v.data, v.size * sizeof(int));
+  // NOTE: This isn't an atomic_add, because of the following scenario:
+  // 1. push size 1000 queued (tail_commit = 1000)
+  // 2. push size 1 queued (tail_commit = 1001)
+  // 3. push size 1 completes
+  // We cannot update tail_valid until the first push also completes, hence why
+  // this is a compare_exchange
+  while (!atomic_compare_exchange_weak(&s->tail_valid, &tail, next_tail))
+    ;
   return 0;
 }
 
@@ -131,33 +176,60 @@ void srb_push(srb *s, int_slice v) { UNWRAP(srb_try_push(s, v)); }
 /**
  * @returns the number of elements present in `s`
  */
-size_t srb_len(srb *s) {
-  if (s->head <= s->tail) {
+size_t srb_len(size_t head, size_t tail, size_t size) {
+  if (head <= tail) {
     // Gaps are at either side of the array.
     // 00111100000
     //   h   t
-    return s->tail - s->head;
+    return tail - head;
   } else {
     // Gap is in the middle of the array.
     // 11111100011
     //       t  h
-    return s->tail + (s->buffer.size - s->head);
+    return tail + (size - head);
   }
 }
 
-int srb_try_pop(srb *s, int_slice v) {
-  if (srb_len(s) < v.size) {
+/**
+ * @brief Effectively does `*out = head + n;`, wrapping around on size, and
+ * returning an error if it would overflow
+ */
+int srb_wrapping_pop(size_t *out, size_t head, size_t tail, size_t size,
+                     size_t n) {
+  if (srb_len(head, tail, size) < n) {
     return 1;
   }
+
   // TODO: wrapping_add
-  size_t next_head = s->head + v.size;
-  if (next_head >= s->buffer.size) {
-    next_head -= v.size;
+  size_t next_head = head + n;
+  if (next_head >= size) {
+    // TODO: wrapping_sub
+    next_head -= size;
   }
 
+  *out = next_head;
+  return 0;
+}
+
+int srb_try_pop(srb *s, int_slice v) {
+  size_t next_head;
+  size_t head;
+  do {
+    head = atomic_load(&s->head_commit);
+    size_t tail = atomic_load(&s->tail_valid);
+    TRY(srb_wrapping_pop(&next_head, head, tail, s->buffer.size, v.size));
+  } while (!atomic_compare_exchange_weak(&s->head_commit, &head, next_head));
+
   // TODO: checked mul
-  memcpy(v.data, &s->buffer.data[s->head], v.size * sizeof(int));
-  s->head = next_head;
+  memcpy(v.data, &s->buffer.data[head], v.size * sizeof(int));
+  // NOTE: This isn't an atomic_add, because of the following scenario:
+  // 1. pop size 1000 queued (head_commit = 1000)
+  // 2. pop size 1 queued (head_commit = 1001)
+  // 3. pop size 1 completes
+  // We cannot update head_valid until the first pop also completes, hence why
+  // this is a compare_exchange
+  while (!atomic_compare_exchange_weak(&s->head_valid, &head, next_head))
+    ;
   return 0;
 }
 
