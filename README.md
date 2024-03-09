@@ -12,3 +12,6 @@ See the `tests` folder for usage examples. Provided functions:
 - `*_try_{push,pop}_one`: helper function to push/pop a single element,
   returning an error code if the ringbuffer is full/empty.
 - `*_{push,pop}_one`: same as the above, only `assert`s that there is no error.
+
+To declare a new ringbuffer type and all the methods, use `SRB_DECL`. To define
+the implmentations for all these functions, use `SRB_DEF`.
