@@ -84,24 +84,18 @@
   } TYPE
 
 /**
- * @brief Declares a new ringbuffer called `TYPE`, whose elements are of
-type
+ * @brief Declares a new ringbuffer called `TYPE`, whose elements are of type
  * `ELEM_TYPE`.
  *
- * Also declares all the functions, prefixed with `TYPE`, to go along
-with it.
+ * Also declares all the functions, prefixed with `TYPE`, to go along with it.
  *
  * Structure:
  *
- * head_valid --(A)-- head_commit --(B)-- tail_valid --(C)-- tail_commit
---(D)--
+ * head_valid --(A)-- head_commit --(B)-- tail_valid --(C)-- tail_commit --(D)--
  *
- * Pushes and pops are done in two stages: first, the "committed" region
-is
- * grown, representing a claim on a region of memory, and then the
-"valid"
- * region is grown, representing a finished read or write. Both steps
-can be
+ * Pushes and pops are done in two stages: first, the "committed" region is
+ * grown, representing a claim on a region of memory, and then the "valid"
+ * region is grown, representing a finished read or write. Both steps can be
  * done with a simple atomic addition.
  *
  * Region descriptions:
