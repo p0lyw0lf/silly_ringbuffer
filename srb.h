@@ -377,7 +377,7 @@ have.
       SRB_TRY(                                                                 \
           srb_wrapping_pop(&next_head, head, tail, s->buffer.size, v.size));   \
     } while (                                                                  \
-        !atomic_compare_exchange_weak(&s->head_commit, &head, next_head));     \
+        !atomic_compare_exchange_strong(&s->head_commit, &head, next_head));   \
                                                                                \
     SRB_PRINTF("pop: v.size %zu s->buffer.size %zu head %zu next_head %zu\n",  \
                v.size, s->buffer.size, head, next_head);                       \
