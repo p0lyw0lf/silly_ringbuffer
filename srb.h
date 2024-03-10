@@ -13,9 +13,6 @@
 #define SRB_PRINTF(...)
 #endif // SRB_LOG_TRACE
 
-#if _MSC_VER && !__clang__
-#define srb_counted_by(n) [size_is(n)]
-#else // _MSC_VER && !__clang__
 #if __has_attribute(counted_by)
 #define srb_counted_by(n) __attribute__((counted_by(n))
 #else // __has_attribute(counted_by)
@@ -25,7 +22,6 @@
 #define srb_counted_by(n)
 #endif // __has_attribute(__element_count__)
 #endif // __has_attribute(counted_by)
-#endif // _MSC_VER && !__clang__
 
 /**
  * @internal
