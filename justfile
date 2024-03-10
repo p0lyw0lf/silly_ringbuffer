@@ -11,3 +11,7 @@ build:
 t: test
 test:
   ctest
+
+rt: retest
+retest:
+  ctest --rerun-failed --output-on-failure
